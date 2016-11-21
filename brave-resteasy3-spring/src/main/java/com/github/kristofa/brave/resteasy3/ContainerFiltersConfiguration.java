@@ -9,8 +9,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Spring adapter for jaxrs2 filters, notably avoids deprecated constructors.
+ * @deprecated for default behavior, this file isn't needed as default inject constructors work.
  */
+@Deprecated
 @Configuration
 public class ContainerFiltersConfiguration {
 

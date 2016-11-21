@@ -2,7 +2,8 @@ package com.github.kristofa.brave.httpclient;
 
 import com.github.kristofa.brave.Brave;
 import com.github.kristofa.brave.ClientRequestInterceptor;
-import com.github.kristofa.brave.http.DefaultSpanNameProvider;
+import com.github.kristofa.brave.ClientRequestAdapter;
+import com.github.kristofa.brave.TagExtractor;
 import com.github.kristofa.brave.http.HttpClientRequestAdapter;
 import com.github.kristofa.brave.http.SpanNameProvider;
 import org.apache.http.HttpRequest;
@@ -25,16 +26,28 @@ public class BraveHttpRequestInterceptor implements HttpRequestInterceptor {
         return new Builder(brave);
     }
 
-    public static final class Builder {
+    public static final class Builder implements TagExtractor.Config<Builder> {
         final Brave brave;
-        SpanNameProvider spanNameProvider = new DefaultSpanNameProvider();
+        final HttpClientRequestAdapter.FactoryBuilder requestFactoryBuilder
+            = HttpClientRequestAdapter.factoryBuilder();
 
         Builder(Brave brave) { // intentionally hidden
             this.brave = checkNotNull(brave, "brave");
         }
 
         public Builder spanNameProvider(SpanNameProvider spanNameProvider) {
-            this.spanNameProvider = checkNotNull(spanNameProvider, "spanNameProvider");
+            requestFactoryBuilder.spanNameProvider(spanNameProvider);
+            return this;
+        }
+
+        @Override public Builder addKey(String key) {
+            requestFactoryBuilder.addKey(key);
+            return this;
+        }
+
+        @Override
+        public Builder addValueParserFactory(TagExtractor.ValueParserFactory factory) {
+            requestFactoryBuilder.addValueParserFactory(factory);
             return this;
         }
 
@@ -44,24 +57,22 @@ public class BraveHttpRequestInterceptor implements HttpRequestInterceptor {
     }
 
     private final ClientRequestInterceptor requestInterceptor;
-    private final SpanNameProvider spanNameProvider;
+    private final ClientRequestAdapter.Factory<HttpClientRequestImpl> requestAdapterFactory;
 
     BraveHttpRequestInterceptor(Builder b) { // intentionally hidden
         this.requestInterceptor = b.brave.clientRequestInterceptor();
-        this.spanNameProvider = b.spanNameProvider;
+        this.requestAdapterFactory = b.requestFactoryBuilder.build(HttpClientRequestImpl.class);
     }
 
     /**
-     * Creates a new instance.
-     *
-     * @param requestInterceptor
-     * @param spanNameProvider Provides span name for request.
      * @deprecated please use {@link #create(Brave)} or {@link #builder(Brave)}
      */
     @Deprecated
     public BraveHttpRequestInterceptor(ClientRequestInterceptor requestInterceptor, SpanNameProvider spanNameProvider) {
         this.requestInterceptor = requestInterceptor;
-        this.spanNameProvider = spanNameProvider;
+        this.requestAdapterFactory = HttpClientRequestAdapter.factoryBuilder()
+            .spanNameProvider(spanNameProvider)
+            .build(HttpClientRequestImpl.class);
     }
 
     /**
@@ -69,7 +80,8 @@ public class BraveHttpRequestInterceptor implements HttpRequestInterceptor {
      */
     @Override
     public void process(final HttpRequest request, final HttpContext context) {
-        HttpClientRequestAdapter adapter = new HttpClientRequestAdapter(new HttpClientRequestImpl(request), spanNameProvider);
+        ClientRequestAdapter adapter =
+            requestAdapterFactory.create(new HttpClientRequestImpl(request));
         requestInterceptor.handle(adapter);
     }
 }

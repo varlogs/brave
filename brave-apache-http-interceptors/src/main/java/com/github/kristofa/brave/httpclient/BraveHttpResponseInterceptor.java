@@ -1,7 +1,9 @@
 package com.github.kristofa.brave.httpclient;
 
 import com.github.kristofa.brave.Brave;
+import com.github.kristofa.brave.ClientResponseAdapter;
 import com.github.kristofa.brave.ClientResponseInterceptor;
+import com.github.kristofa.brave.TagExtractor;
 import com.github.kristofa.brave.http.HttpClientResponseAdapter;
 import org.apache.http.HttpException;
 import org.apache.http.HttpResponse;
@@ -26,11 +28,24 @@ public class BraveHttpResponseInterceptor implements HttpResponseInterceptor {
         return new Builder(brave);
     }
 
-    public static final class Builder {
+    public static final class Builder implements TagExtractor.Config<Builder> {
         final Brave brave;
+        final HttpClientResponseAdapter.FactoryBuilder responseFactoryBuilder
+            = HttpClientResponseAdapter.factoryBuilder();
 
         Builder(Brave brave) { // intentionally hidden
-           this.brave = checkNotNull(brave, "brave");
+            this.brave = checkNotNull(brave, "brave");
+        }
+
+        @Override public Builder addKey(String key) {
+            responseFactoryBuilder.addKey(key);
+            return this;
+        }
+
+        @Override
+        public Builder addValueParserFactory(TagExtractor.ValueParserFactory factory) {
+            responseFactoryBuilder.addValueParserFactory(factory);
+            return this;
         }
 
         public BraveHttpResponseInterceptor build() {
@@ -39,9 +54,11 @@ public class BraveHttpResponseInterceptor implements HttpResponseInterceptor {
     }
 
     private final ClientResponseInterceptor responseInterceptor;
+    private final ClientResponseAdapter.Factory<HttpClientResponseImpl> responseAdapterFactory;
 
     BraveHttpResponseInterceptor(Builder b) { // intentionally hidden
         this.responseInterceptor = b.brave.clientResponseInterceptor();
+        this.responseAdapterFactory = b.responseFactoryBuilder.build(HttpClientResponseImpl.class);
     }
 
     /**
@@ -50,6 +67,8 @@ public class BraveHttpResponseInterceptor implements HttpResponseInterceptor {
     @Deprecated
     public BraveHttpResponseInterceptor(final ClientResponseInterceptor responseInterceptor) {
         this.responseInterceptor = responseInterceptor;
+        this.responseAdapterFactory = HttpClientResponseAdapter.factoryBuilder()
+            .build(HttpClientResponseImpl.class);
     }
 
     /**
@@ -57,8 +76,9 @@ public class BraveHttpResponseInterceptor implements HttpResponseInterceptor {
      */
     @Override
     public void process(final HttpResponse response, final HttpContext context) throws HttpException, IOException {
-        final HttpClientResponseImpl httpClientResponse = new HttpClientResponseImpl(response);
-        responseInterceptor.handle(new HttpClientResponseAdapter(httpClientResponse));
+        ClientResponseAdapter adapter =
+            responseAdapterFactory.create(new HttpClientResponseImpl(response));
+        responseInterceptor.handle(adapter);
     }
 
 }
